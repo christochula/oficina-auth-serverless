@@ -1,0 +1,41 @@
+{
+  "name": "oficina-auth-serverless",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Autenticacao serverless por CPF e notificacoes da Oficina API.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "jest --runInBand --coverage",
+    "test:unit": "jest --runInBand tests/unit",
+    "test:integration": "jest --runInBand tests/integration",
+    "ci": "npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.0.0",
+    "@aws-sdk/client-sns": "^3.0.0",
+    "datadog-lambda-js": "^12.142.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@types/aws-lambda": "^8.10.0",
+    "@types/jest": "^30.0.0",
+    "@types/jsonwebtoken": "^9.0.0",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "esbuild": "^0.25.0",
+    "eslint": "^10.0.0",
+    "jest": "^30.0.0",
+    "ts-jest": "^29.2.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}

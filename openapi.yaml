@@ -1,0 +1,131 @@
+openapi: 3.0.3
+info:
+  title: Oficina Auth Serverless API
+  version: 1.0.0
+  description: >-
+    Contract for CPF authentication and the protected proxy exposed by the AWS
+    API Gateway HTTP API. The backend API operations are documented by oficina-api.
+servers:
+  - url: https://{apiId}.execute-api.{region}.amazonaws.com
+    variables:
+      apiId:
+        default: replace-after-deploy
+      region:
+        default: us-east-1
+paths:
+  /auth/token:
+    post:
+      operationId: issueClientAccessToken
+      summary: Authenticate an active customer by CPF
+      description: >-
+        Accepts masked or unmasked CPF input. Invalid CPF, missing customer and
+        inactive customer intentionally produce the same generic response.
+      tags: [Authentication]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '200':
+          description: Short-lived client access token
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Generic authentication failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Generic processing failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/{proxy}:
+    parameters:
+      - name: proxy
+        in: path
+        required: true
+        schema:
+          type: string
+    x-amazon-apigateway-any-method:
+      summary: Protected private proxy to oficina-api
+      description: >-
+        Requires a client JWT accepted by the Lambda authorizer. The specific
+        backend resources are defined in the oficina-api OpenAPI contract.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Response from the private backend
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Token accepted but insufficient authorization
+components:
+  parameters:
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 128
+        pattern: '^[A-Za-z0-9._:-]+$'
+  headers:
+    CorrelationId:
+      schema:
+        type: string
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    TokenRequest:
+      type: object
+      additionalProperties: false
+      required: [cpf]
+      properties:
+        cpf:
+          type: string
+          description: CPF with valid check digits, masked or unmasked
+          example: 529.982.247-25
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in, scope]
+      properties:
+        access_token:
+          type: string
+          description: >-
+            HS256 JWT with iss, aud, sub, role=CLIENTE, scopes, jti,
+            token_use=client and client_id. It never contains the CPF.
+        token_type:
+          type: string
+          enum: [Bearer]
+        expires_in:
+          type: integer
+          example: 300
+        scope:
+          type: string
+          example: orders:read orders:write
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string

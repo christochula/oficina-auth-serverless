@@ -1,0 +1,36 @@
+aws_region  = "us-east-1"
+environment = "homolog"
+owner       = "soat-architecture"
+cors_allowed_origins = ["https://oficina-homolog.example.com"]
+
+# Existing secrets. Their values are never managed by this Terraform state.
+db_secret_arn  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:oficina/homolog/database-xxxxxx"
+jwt_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:oficina/shared/jwt-xxxxxx"
+secrets_kms_key_arns = [
+  "arn:aws:kms:us-east-1:123456789012:key/replace-with-database-key-id",
+  "arn:aws:kms:us-east-1:123456789012:key/replace-with-jwt-key-id",
+]
+
+# Existing private networking from the Kubernetes/database infrastructure repositories.
+lambda_subnet_ids         = ["subnet-aaaa", "subnet-bbbb"]
+lambda_security_group_ids = ["sg-lambda"]
+
+vpc_link_subnet_ids         = ["subnet-aaaa", "subnet-bbbb"]
+vpc_link_security_group_ids = ["sg-vpc-link"]
+backend_listener_arn         = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/oficina/123/456"
+private_integration_tls_server_name = "oficina.internal.example.com"
+
+# Instead of the four networking/listener values above, the following remote state may expose:
+# lambda_subnet_ids, lambda_security_group_ids, vpc_link_subnet_ids,
+# vpc_link_security_group_ids and backend_listener_arn (or alb_listener_arn).
+# network_remote_state = {
+#   bucket = "oficina-terraform-state-123456789012"
+#   key    = "kubernetes/homolog/terraform.tfstate"
+#   region = "us-east-1"
+# }
+
+datadog_enabled            = true
+datadog_api_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:datadog/api-key-xxxxxx"
+datadog_site               = "datadoghq.com"
+
+notification_enabled = true

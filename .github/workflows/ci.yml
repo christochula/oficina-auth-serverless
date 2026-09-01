@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [homolog, main]
+  push:
+    branches-ignore: [homolog, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    name: application
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit and mocked integration tests
+        run: npm test
+      - name: Build Lambda bundles
+        run: npm run build
+
+  terraform:
+    name: terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Build Lambda bundles required by archive data sources
+        run: npm ci && npm run build
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+      - name: Check formatting
+        run: terraform -chdir=terraform fmt -check -recursive
+      - name: Initialize providers without backend
+        run: terraform -chdir=terraform init -backend=false -input=false
+      - name: Validate configuration
+        run: terraform -chdir=terraform validate

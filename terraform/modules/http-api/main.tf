@@ -21,7 +21,7 @@ resource "aws_apigatewayv2_api" "this" {
     max_age = 300
   }
 
-  tags          = var.tags
+  tags = var.tags
 }
 
 resource "aws_cloudwatch_log_group" "access" {

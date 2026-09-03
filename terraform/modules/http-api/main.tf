@@ -1,7 +1,7 @@
 resource "aws_apigatewayv2_api" "this" {
   name          = var.name
   protocol_type = "HTTP"
-  description   = "CPF authentication and protected proxy for Oficina API"
+  description   = "Autenticacao por CPF e proxy protegido da Oficina API"
 
   cors_configuration {
     allow_credentials = false
@@ -13,12 +13,10 @@ resource "aws_apigatewayv2_api" "this" {
       "x-correlation-id",
       "x-webhook-token",
     ]
-    allow_methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
-    allow_origins = var.cors_allowed_origins
-    expose_headers = [
-      "x-correlation-id",
-    ]
-    max_age = 300
+    allow_methods  = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    allow_origins  = var.cors_allowed_origins
+    expose_headers = ["x-correlation-id"]
+    max_age        = 300
   }
 
   tags = var.tags
@@ -28,13 +26,6 @@ resource "aws_cloudwatch_log_group" "access" {
   name              = "/aws/apigateway/${var.name}"
   retention_in_days = var.log_retention_days
   tags              = var.tags
-}
-
-resource "aws_apigatewayv2_vpc_link" "this" {
-  name               = "${var.name}-vpc-link"
-  subnet_ids         = var.vpc_link_subnet_ids
-  security_group_ids = var.vpc_link_security_group_ids
-  tags               = var.tags
 }
 
 resource "aws_apigatewayv2_integration" "auth" {
@@ -63,30 +54,24 @@ resource "aws_apigatewayv2_authorizer" "jwt" {
   identity_sources                  = ["$request.header.Authorization"]
 }
 
+# AWS Academy: sem VPC Link nem ALB interno. O EKS expoe a aplicacao por um
+# Service type LoadBalancer publico; o API Gateway faz HTTP_PROXY direto para
+# essa URL (var.backend_url).
 resource "aws_apigatewayv2_integration" "private_api" {
   api_id                 = aws_apigatewayv2_api.this.id
   integration_type       = "HTTP_PROXY"
   integration_method     = "ANY"
-  integration_uri        = var.backend_listener_arn
-  connection_type        = "VPC_LINK"
-  connection_id          = aws_apigatewayv2_vpc_link.this.id
+  integration_uri        = "${trimsuffix(var.backend_url, "/")}/{proxy}"
+  connection_type        = "INTERNET"
   payload_format_version = "1.0"
   timeout_milliseconds   = 30000
 
   request_parameters = {
-    "overwrite:path"                    = "$request.path"
     "overwrite:header.x-auth-sub"       = "$context.authorizer.sub"
     "overwrite:header.x-auth-client-id" = "$context.authorizer.client_id"
     "overwrite:header.x-auth-role"      = "$context.authorizer.role"
     "overwrite:header.x-auth-scopes"    = "$context.authorizer.scopes"
     "overwrite:header.x-token-use"      = "$context.authorizer.token_use"
-  }
-
-  dynamic "tls_config" {
-    for_each = try(length(trimspace(var.private_integration_tls_server_name)) > 0, false) ? [1] : []
-    content {
-      server_name_to_verify = var.private_integration_tls_server_name
-    }
   }
 }
 
@@ -98,10 +83,19 @@ resource "aws_apigatewayv2_route" "private_api" {
   authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
 }
 
-# Probes, documentação e o bootstrap/refresh do login de operadores não
-# carregam autorização do authorizer de access tokens. Cada endpoint ainda
-# aplica a validação apropriada no NestJS. Rotas específicas têm precedência
-# sobre o proxy protegido.
+# Probes, docs e login/refresh de operador nao passam pelo authorizer de
+# access token. O NestJS ainda valida cada endpoint. Rotas especificas tem
+# precedencia sobre o proxy protegido.
+resource "aws_apigatewayv2_integration" "public_backend" {
+  api_id                 = aws_apigatewayv2_api.this.id
+  integration_type       = "HTTP_PROXY"
+  integration_method     = "ANY"
+  integration_uri        = "${trimsuffix(var.backend_url, "/")}/{proxy}"
+  connection_type        = "INTERNET"
+  payload_format_version = "1.0"
+  timeout_milliseconds   = 30000
+}
+
 resource "aws_apigatewayv2_route" "public_backend" {
   for_each = toset([
     "GET /api/health/live",
@@ -116,7 +110,7 @@ resource "aws_apigatewayv2_route" "public_backend" {
 
   api_id             = aws_apigatewayv2_api.this.id
   route_key          = each.value
-  target             = "integrations/${aws_apigatewayv2_integration.private_api.id}"
+  target             = "integrations/${aws_apigatewayv2_integration.public_backend.id}"
   authorization_type = "NONE"
 }
 
@@ -135,13 +129,11 @@ resource "aws_apigatewayv2_stage" "default" {
     destination_arn = aws_cloudwatch_log_group.access.arn
     format = jsonencode({
       request_id          = "$context.requestId"
-      extended_request_id = "$context.extendedRequestId"
       route_key           = "$context.routeKey"
       status              = "$context.status"
       response_latency_ms = "$context.responseLatency"
       integration_error   = "$context.integrationErrorMessage"
       source_ip           = "$context.identity.sourceIp"
-      user_agent          = "$context.identity.userAgent"
     })
   }
 

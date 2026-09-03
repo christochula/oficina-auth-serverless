@@ -6,6 +6,11 @@ variable "description" {
   type = string
 }
 
+variable "role_arn" {
+  description = "ARN da IAM role de execucao (AWS Academy: LabRole)."
+  type        = string
+}
+
 variable "filename" {
   type = string
 }
@@ -34,11 +39,13 @@ variable "reserved_concurrent_executions" {
 }
 
 variable "subnet_ids" {
-  type = list(string)
+  type    = list(string)
+  default = []
 }
 
 variable "security_group_ids" {
-  type = list(string)
+  type    = list(string)
+  default = []
 }
 
 variable "environment_variables" {
@@ -53,29 +60,12 @@ variable "layers" {
 
 variable "datadog_enabled" {
   type    = bool
-  default = true
-}
-
-variable "secret_arns" {
-  type    = list(string)
-  default = []
-}
-
-variable "secrets_kms_key_arns" {
-  type    = list(string)
-  default = []
-}
-
-variable "additional_policy_json" {
-  type      = string
-  default   = null
-  nullable  = true
-  sensitive = true
+  default = false
 }
 
 variable "log_retention_days" {
   type    = number
-  default = 30
+  default = 14
 }
 
 variable "tags" {

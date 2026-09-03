@@ -18,26 +18,14 @@ variable "authorizer_function_invoke_arn" {
   type = string
 }
 
-variable "backend_listener_arn" {
-  type = string
-}
-
-variable "vpc_link_subnet_ids" {
-  type = list(string)
-}
-
-variable "vpc_link_security_group_ids" {
-  type = list(string)
-}
-
-variable "private_integration_tls_server_name" {
-  type     = string
-  default  = null
-  nullable = true
+variable "backend_url" {
+  description = "URL publica do LoadBalancer do EKS (oficina-api). Ex: http://<elb-dns>"
+  type        = string
 }
 
 variable "cors_allowed_origins" {
-  type = list(string)
+  type    = list(string)
+  default = ["*"]
 }
 
 variable "authorizer_cache_ttl_seconds" {
@@ -57,7 +45,7 @@ variable "throttling_rate_limit" {
 
 variable "log_retention_days" {
   type    = number
-  default = 30
+  default = 14
 }
 
 variable "tags" {

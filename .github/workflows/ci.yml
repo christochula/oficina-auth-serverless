@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [homolog, main]
+    branches: [main]
   push:
-    branches-ignore: [homolog, main]
+    branches-ignore: [main]
   workflow_dispatch:
 
 permissions:
@@ -55,7 +55,7 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.10.5
+          terraform_version: 1.16.0
       - name: Check formatting
         run: terraform -chdir=terraform fmt -check -recursive
       - name: Initialize providers without backend

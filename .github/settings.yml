@@ -1,5 +1,6 @@
+# Intencao de configuracao. Aplicar via docs de governanca ou Settings App.
 repository:
-  description: CPF authentication, protected API Gateway proxy and serverless notifications for Oficina API
+  description: Autenticacao por CPF, proxy do API Gateway e notificacoes serverless da Oficina (AWS Academy)
   has_issues: true
   has_projects: false
   has_wiki: false
@@ -16,30 +17,14 @@ branches:
       required_pull_request_reviews:
         required_approving_review_count: 1
         dismiss_stale_reviews: true
-        require_code_owner_reviews: true
+        require_code_owner_reviews: false
       required_status_checks:
         strict: true
         contexts:
-          - "CI / application"
-          - "CI / terraform"
+          - application
+          - terraform
       enforce_admins: true
-      restrictions: null
       required_linear_history: true
       allow_force_pushes: false
       allow_deletions: false
-  - name: homolog
-    protection:
-      required_pull_request_reviews:
-        required_approving_review_count: 1
-        dismiss_stale_reviews: true
-        require_code_owner_reviews: true
-      required_status_checks:
-        strict: true
-        contexts:
-          - "CI / application"
-          - "CI / terraform"
-      enforce_admins: true
       restrictions: null
-      required_linear_history: true
-      allow_force_pushes: false
-      allow_deletions: false

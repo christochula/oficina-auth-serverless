@@ -42,6 +42,28 @@ function bearerToken(event: APIGatewayRequestAuthorizerEventV2): string | null {
   return match?.[1] ?? null;
 }
 
+// Endpoints publicos do NestJS (@Public / sem guard). O API Gateway usa uma
+// unica rota ANY /api/{proxy+} com este authorizer; aqui liberamos os paths
+// publicos sem exigir access token.
+const PUBLIC_PATH_PREFIXES = [
+  '/api/health',
+  '/api/docs',
+  '/api/v1/auth/login',
+  '/api/v1/auth/refresh',
+];
+
+function isPublicPath(path: string | undefined): boolean {
+  if (!path) return false;
+  return PUBLIC_PATH_PREFIXES.some(
+    (p) => path === p || path.startsWith(`${p}/`) || path.startsWith(`${p}-`),
+  );
+}
+
+const ALLOW_PUBLIC: AuthorizerResult = {
+  isAuthorized: true,
+  context: {} as AuthorizerContext,
+};
+
 export function createAuthorizerHandler(
   dependencies: AuthorizerDependencies = defaultDependencies,
 ): AuthorizerHandler {
@@ -50,6 +72,16 @@ export function createAuthorizerHandler(
       event.headers,
       event.requestContext.requestId,
     );
+
+    const path = event.requestContext.http.path;
+    if (isPublicPath(path)) {
+      log('info', 'authorizer.allowed', correlationId, {
+        outcome: 'allowed',
+        reason: 'public_path',
+      });
+      return ALLOW_PUBLIC;
+    }
+
     const token = bearerToken(event);
     if (!token) {
       log('warn', 'authorizer.denied', correlationId, {

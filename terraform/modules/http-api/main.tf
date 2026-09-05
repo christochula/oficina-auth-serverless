@@ -58,10 +58,12 @@ resource "aws_apigatewayv2_authorizer" "jwt" {
 # Service type LoadBalancer publico; o API Gateway faz HTTP_PROXY direto para
 # essa URL (var.backend_url).
 resource "aws_apigatewayv2_integration" "private_api" {
-  api_id                 = aws_apigatewayv2_api.this.id
-  integration_type       = "HTTP_PROXY"
-  integration_method     = "ANY"
-  integration_uri        = "${trimsuffix(var.backend_url, "/")}/{proxy}"
+  api_id             = aws_apigatewayv2_api.this.id
+  integration_type   = "HTTP_PROXY"
+  integration_method = "ANY"
+  # Route ANY /api/{proxy+} captura tudo depois de /api/. O NestJS usa prefixo
+  # global /api, entao reconstruimos: http://<elb>/api/{proxy}.
+  integration_uri        = "${trimsuffix(var.backend_url, "/")}/api/{proxy}"
   connection_type        = "INTERNET"
   payload_format_version = "1.0"
   timeout_milliseconds   = 30000
@@ -83,36 +85,10 @@ resource "aws_apigatewayv2_route" "private_api" {
   authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
 }
 
-# Probes, docs e login/refresh de operador nao passam pelo authorizer de
-# access token. O NestJS ainda valida cada endpoint. Rotas especificas tem
-# precedencia sobre o proxy protegido.
-resource "aws_apigatewayv2_integration" "public_backend" {
-  api_id                 = aws_apigatewayv2_api.this.id
-  integration_type       = "HTTP_PROXY"
-  integration_method     = "ANY"
-  integration_uri        = "${trimsuffix(var.backend_url, "/")}/{proxy}"
-  connection_type        = "INTERNET"
-  payload_format_version = "1.0"
-  timeout_milliseconds   = 30000
-}
-
-resource "aws_apigatewayv2_route" "public_backend" {
-  for_each = toset([
-    "GET /api/health/live",
-    "GET /api/health/ready",
-    "GET /api/docs",
-    "GET /api/docs/{proxy+}",
-    "GET /api/docs-json",
-    "GET /api/docs-yaml",
-    "POST /api/v1/auth/login",
-    "POST /api/v1/auth/refresh",
-  ])
-
-  api_id             = aws_apigatewayv2_api.this.id
-  route_key          = each.value
-  target             = "integrations/${aws_apigatewayv2_integration.public_backend.id}"
-  authorization_type = "NONE"
-}
+# Uma unica rota ANY /api/{proxy+} com o authorizer. Os endpoints publicos do
+# NestJS (health, docs, login/refresh de operador) sao liberados pelo proprio
+# authorizer (allowlist de path), evitando rotas estaticas com {proxy} na URI
+# (que o API Gateway rejeita).
 
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.this.id

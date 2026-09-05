@@ -51,7 +51,10 @@ resource "aws_apigatewayv2_authorizer" "jwt" {
   authorizer_payload_format_version = "2.0"
   enable_simple_responses           = true
   authorizer_result_ttl_in_seconds  = var.authorizer_cache_ttl_seconds
-  identity_sources                  = ["$request.header.Authorization"]
+  # Sem identity_sources: o API Gateway chama o authorizer em TODA request
+  # (mesmo sem header Authorization), permitindo a allowlist de paths publicos
+  # dentro da Lambda. Cache ja e 0.
+  identity_sources = []
 }
 
 # AWS Academy: sem VPC Link nem ALB interno. O EKS expoe a aplicacao por um

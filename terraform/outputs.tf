@@ -1,20 +1,20 @@
 output "api_id" {
-  description = "HTTP API identifier."
+  description = "ID do HTTP API."
   value       = module.http_api.api_id
 }
 
 output "api_endpoint" {
-  description = "Base endpoint for the deployed HTTP API."
+  description = "Endpoint base do HTTP API."
   value       = module.http_api.api_endpoint
 }
 
 output "auth_token_endpoint" {
-  description = "CPF authentication endpoint."
+  description = "Endpoint de autenticacao por CPF."
   value       = "${module.http_api.api_endpoint}/auth/token"
 }
 
 output "protected_proxy_route" {
-  description = "Protected route pattern forwarded through VPC Link."
+  description = "Rota protegida encaminhada para o backend."
   value       = "${module.http_api.api_endpoint}/api/{proxy+}"
 }
 
@@ -27,21 +27,12 @@ output "authorizer_function_name" {
 }
 
 output "jwt_secret_arn" {
-  description = "Shared JWT secret ARN consumed by the serverless and application repositories."
-  value       = data.aws_secretsmanager_secret.jwt.arn
-}
-
-output "jwt_secret_name" {
-  description = "Shared JWT secret name consumed by the serverless and application repositories."
-  value       = data.aws_secretsmanager_secret.jwt.name
+  description = "ARN do secret JWT compartilhado (input, repassado como contrato)."
+  value       = var.jwt_secret_arn
 }
 
 output "database_secret_arn" {
-  value = data.aws_secretsmanager_secret.database.arn
-}
-
-output "database_secret_name" {
-  value = data.aws_secretsmanager_secret.database.name
+  value = var.db_secret_arn
 }
 
 output "notification_queue_url" {
@@ -52,17 +43,6 @@ output "notification_queue_arn" {
   value = try(module.notification_messaging[0].queue_arn, null)
 }
 
-output "notification_dlq_url" {
-  value = try(module.notification_messaging[0].dlq_url, null)
-}
-
 output "notification_topic_arn" {
   value = try(module.notification_messaging[0].topic_arn, null)
-}
-
-output "datadog_layer_versions" {
-  value = var.datadog_enabled ? {
-    node      = var.datadog_node_layer_version
-    extension = var.datadog_extension_layer_version
-  } : null
 }

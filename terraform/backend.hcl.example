@@ -1,5 +1,5 @@
-bucket       = "oficina-terraform-state-ACCOUNT_ID"
-key          = "auth-serverless/homolog/terraform.tfstate"
+bucket       = "oficina-tc3-tfstate-519768589921"
+key          = "oficina/auth/terraform.tfstate"
 region       = "us-east-1"
 encrypt      = true
 use_lockfile = true

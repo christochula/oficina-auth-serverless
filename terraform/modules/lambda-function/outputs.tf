@@ -9,7 +9,3 @@ output "function_name" {
 output "invoke_arn" {
   value = aws_lambda_function.this.invoke_arn
 }
-
-output "execution_role_arn" {
-  value = aws_iam_role.this.arn
-}

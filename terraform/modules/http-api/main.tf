@@ -88,6 +88,107 @@ resource "aws_apigatewayv2_route" "private_api" {
   authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
 }
 
+locals {
+  business_backends = {
+    billing    = var.billing_backend_url
+    production = var.production_backend_url
+  }
+  public_backend_routes = {
+    client_lookup = {
+      method = "POST"
+      path   = "/api/v1/internal/auth/cliente"
+      base   = var.backend_url
+    }
+    mercado_pago = {
+      method = "POST"
+      path   = "/api/v1/billing/webhooks/mercadopago"
+      base   = var.billing_backend_url
+    }
+    billing_health = {
+      method = "GET"
+      path   = "/api/v1/billing/health"
+      base   = var.billing_backend_url
+    }
+    production_health = {
+      method = "GET"
+      path   = "/api/v1/production/health"
+      base   = var.production_backend_url
+    }
+    billing_openapi = {
+      method       = "GET"
+      path         = "/api/v1/billing/openapi.json"
+      backend_path = "/api/docs-json"
+      base         = var.billing_backend_url
+    }
+    production_openapi = {
+      method       = "GET"
+      path         = "/api/v1/production/openapi.json"
+      backend_path = "/api/docs-json"
+      base         = var.production_backend_url
+    }
+  }
+}
+
+resource "aws_apigatewayv2_integration" "business" {
+  for_each               = local.business_backends
+  api_id                 = aws_apigatewayv2_api.this.id
+  integration_type       = "HTTP_PROXY"
+  integration_method     = "ANY"
+  integration_uri        = "${trimsuffix(each.value, "/")}/api/v1/${each.key}/{proxy}"
+  connection_type        = "INTERNET"
+  payload_format_version = "1.0"
+  timeout_milliseconds   = 30000
+}
+
+resource "aws_apigatewayv2_route" "business" {
+  for_each           = local.business_backends
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = "ANY /api/v1/${each.key}/{proxy+}"
+  target             = "integrations/${aws_apigatewayv2_integration.business[each.key].id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
+}
+
+# These exact paths bypass user JWT only. OS validates the internal token;
+# Billing validates the Mercado Pago webhook signature before any state change.
+resource "aws_apigatewayv2_integration" "public_backend" {
+  for_each               = local.public_backend_routes
+  api_id                 = aws_apigatewayv2_api.this.id
+  integration_type       = "HTTP_PROXY"
+  integration_method     = each.value.method
+  integration_uri        = "${trimsuffix(each.value.base, "/")}${try(each.value.backend_path, each.value.path)}"
+  connection_type        = "INTERNET"
+  payload_format_version = "1.0"
+  timeout_milliseconds   = 10000
+}
+
+resource "aws_apigatewayv2_route" "public_backend" {
+  for_each           = local.public_backend_routes
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = "${each.value.method} ${each.value.path}"
+  target             = "integrations/${aws_apigatewayv2_integration.public_backend[each.key].id}"
+  authorization_type = "NONE"
+}
+
+# API routes are more specific than $default. HTTP_PROXY preserves the incoming
+# static/SPA path, so /assets and browser refresh reach the OS frontend server.
+resource "aws_apigatewayv2_integration" "frontend" {
+  api_id                 = aws_apigatewayv2_api.this.id
+  integration_type       = "HTTP_PROXY"
+  integration_method     = "ANY"
+  integration_uri        = trimsuffix(var.backend_url, "/")
+  connection_type        = "INTERNET"
+  payload_format_version = "1.0"
+  timeout_milliseconds   = 30000
+}
+
+resource "aws_apigatewayv2_route" "frontend" {
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = "$default"
+  target             = "integrations/${aws_apigatewayv2_integration.frontend.id}"
+  authorization_type = "NONE"
+}
+
 # Uma unica rota ANY /api/{proxy+} com o authorizer. Os endpoints publicos do
 # NestJS (health, docs, login/refresh de operador) sao liberados pelo proprio
 # authorizer (allowlist de path), evitando rotas estaticas com {proxy} na URI

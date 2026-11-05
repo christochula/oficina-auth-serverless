@@ -37,21 +37,30 @@ export function loadRuntimeConfig(
   environment: NodeJS.ProcessEnv = process.env,
 ): RuntimeConfig {
   const tokenConfig = loadTokenConfig(environment);
+  const osClientLookupUrl = required(environment, 'OS_CLIENT_LOOKUP_URL');
+  const lookupUrl = new URL(osClientLookupUrl);
+  const isLocal = ['localhost', '127.0.0.1', '[::1]'].includes(lookupUrl.hostname);
+  if (lookupUrl.username || lookupUrl.password || lookupUrl.search || lookupUrl.hash ||
+      (lookupUrl.protocol !== 'https:' && !(isLocal && lookupUrl.protocol === 'http:'))) {
+    throw new Error('OS_CLIENT_LOOKUP_URL must use HTTPS (HTTP allowed only on loopback)');
+  }
+  const authClientLookupSecretArn = environment.AUTH_CLIENT_LOOKUP_SECRET_ARN?.trim();
+  const authClientLookupToken = isLocal ? environment.AUTH_CLIENT_LOOKUP_TOKEN?.trim() : undefined;
+  if (!authClientLookupSecretArn && !authClientLookupToken) {
+    throw new Error('Missing required AUTH_CLIENT_LOOKUP_SECRET_ARN');
+  }
   return {
     ...tokenConfig,
-    dbSecretArn: required(environment, 'DB_SECRET_ARN'),
+    osClientLookupUrl,
+    ...(authClientLookupSecretArn ? { authClientLookupSecretArn } : {}),
+    ...(authClientLookupToken ? { authClientLookupToken } : {}),
+    clientLookupTimeoutMs: positiveInteger(environment, 'CLIENT_LOOKUP_TIMEOUT_MS', 5000),
     jwtTtlSeconds: positiveInteger(environment, 'JWT_TTL_SECONDS', 300),
     defaultRole: environment.JWT_DEFAULT_ROLE?.trim() || 'CLIENTE',
     defaultScopes: commaSeparated(environment.JWT_DEFAULT_SCOPES, [
       'orders:read',
       'orders:write',
     ]),
-    pgPoolMax: positiveInteger(environment, 'PG_POOL_MAX', 4),
-    pgConnectionTimeoutMs: positiveInteger(
-      environment,
-      'PG_CONNECTION_TIMEOUT_MS',
-      3_000,
-    ),
   };
 }
 

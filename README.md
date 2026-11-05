@@ -1,79 +1,47 @@
 # oficina-auth-serverless
 
-Autenticação **serverless por CPF** e API Gateway da Oficina API. Executado no **AWS Academy Learner Lab**.
+Autenticacao por CPF, API Gateway HTTPS e notificacoes da Oficina (Fase 4). Repositorio de apoio aos tres microsservicos de negocio; nao acessa o banco de nenhum servico.
 
-Repositório 3 (de 4) do Tech Challenge Fase 3. Ordem de deploy: `oficina-infra-kubernetes` → `oficina-infra-database` → **este** → `oficina-api`.
+## Fluxo e contratos
 
-## Descrição
+`POST /auth/token` valida CPF, consulta o OS com `POST /api/v1/internal/auth/cliente` e `X-Internal-Token`, e emite JWT HS256 de 300 segundos. CPF invalido, cliente ausente e inativo recebem a mesma resposta 401. O lookup exige HTTPS em producao, tem timeout de 5 segundos, rejeita redirects e aceita resposta `{id,nome,email,ativo}` ou `{data:{id,nome,email,ativo}}`. Nenhum CPF ou token e registrado nos logs.
 
-- **`POST /auth/token`** numa **AWS API Gateway HTTP API**: recebe um CPF (mascarado ou não), valida os dígitos, consulta o cliente ativo no PostgreSQL e devolve um **JWT HS256 curto** (300 s) com `sub = clientes.id`, `role = CLIENTE`, `token_use = client`, `scopes`, `jti`. O token **não contém o CPF**.
-- **Lambda authorizer** (`REQUEST`, cache TTL 0) na rota protegida **`ANY /api/{proxy+}`**: valida HS256, `iss`, `aud`, `exp` e os claims obrigatórios; injeta headers internos `x-auth-*`.
-- **Integração HTTP_PROXY** direta para a URL pública do `Service type: LoadBalancer` do EKS (`var.backend_url`). Rotas de probe, Swagger e login/refresh de operador ficam públicas.
-- **Notificações** (`notification_enabled = true`): `SQS → Lambda → SNS`, com DLQ. Consumido pela aplicação para avisar sobre orçamentos.
-- CPF inválido, cliente ausente e cliente inativo retornam **a mesma resposta 401** (anti-enumeração).
+O token mantem `iss=oficina-auth-serverless`, `aud=oficina-api`, `sub=client_id`, `role=CLIENTE`, `token_use=client`, `scopes` e `jti`; nao inclui CPF. Operadores continuam autenticando pelo OS. Cada microsservico verifica JWT, papel e propriedade dos recursos independentemente.
 
-### Diferenças para o design corporativo (limitações do AWS Academy)
+| Rota do Gateway | Destino e protecao |
+| --- | --- |
+| `POST /auth/token` | Lambda emissora; publica |
+| `/api/v1/billing/{proxy+}` | Billing; authorizer JWT |
+| `/api/v1/production/{proxy+}` | Producao; authorizer JWT |
+| `POST /api/v1/billing/webhooks/mercadopago` | Billing; sem JWT, valida assinatura Mercado Pago no aplicativo |
+| `GET /api/v1/billing/openapi.json`, `/api/v1/production/openapi.json` | Contratos OpenAPI publicos dos backends (`/api/docs-json`) |
+| `POST /api/v1/internal/auth/cliente` | OS; sem JWT de usuario, exige `X-Internal-Token` no aplicativo |
+| `GET /api/v1/billing/health`, `/api/v1/production/health` | Saude publica dos servicos |
+| `/api/{proxy+}` | OS; authorizer com allowlist de health/docs/login/refresh |
+| `$default` | Frontend/estaticos/SPA servidos pelo OS; publico |
 
-| Removido | Motivo | Alternativa |
-| --- | --- | --- |
-| IAM role por Lambda | `iam:CreateRole` bloqueado | todas as Lambdas usam a **`LabRole`** |
-| VPC Link + ALB interno | depende do repo de EKS aplicado e de recursos de rede | API Gateway `HTTP_PROXY` (INTERNET) para a URL pública do ELB |
-| Lambda em VPC | exigiria VPC endpoints / NAT para Secrets Manager | Lambda fora de VPC; RDS acessível publicamente com TLS forçado |
-| KMS CMK nos secrets | `kms:CreateKey` não confiável | secrets com chave gerenciada |
+Rotas especificas tem precedencia sobre `$default`. Os backends tambem protegem suas APIs quando acessados diretamente pelo LoadBalancer. Notificacoes preservam SQS -> Lambda -> SNS, DLQ e falhas parciais por lote; as filas de negocio/Saga pertencem aos respectivos servicos.
 
-O código TypeScript das três Lambdas (`src/`) **não mudou** — só a camada Terraform.
+## Execucao e qualidade
 
-## Tecnologias
-
-Node.js 22 + TypeScript + esbuild · AWS Lambda · API Gateway HTTP API · SQS/SNS · `pg` · Terraform 1.16 · GitHub Actions.
-
-## Execução local
+Node.js 22, TypeScript, esbuild e Terraform 1.16.
 
 ```bash
-npm ci && npm run ci          # lint + typecheck + testes + build dos 3 bundles
-terraform -chdir=terraform init \
-  -backend-config="bucket=oficina-tc3-tfstate-$(aws sts get-caller-identity --query Account --output text)" \
-  -backend-config="key=oficina/auth/terraform.tfstate" \
-  -backend-config="region=us-east-1"
-terraform -chdir=terraform plan
+npm ci
+npm run ci
+terraform -chdir=terraform init -backend=false
+terraform -chdir=terraform fmt -check -recursive
+terraform -chdir=terraform validate
 ```
 
-Veja `terraform/terraform.tfvars.example`.
+CI executa lint, typecheck, testes, build e SonarCloud com espera pelo Quality Gate. O gate Jest exige 80% em linhas, statements, funcoes e branches, incluindo todos os fontes exceto tipos. Cobertura local verificada: 55 testes; 90,21% statements, 87,82% branches, 91,48% funcoes e 90,44% linhas. O artefato `auth-coverage` do workflow contem `lcov.info` e a evidencia por execucao; o relatorio local esta em `coverage/lcov-report/index.html`. Valores locais nao comprovam um run publicado.
 
-## Deploy (CI/CD)
+## Configuracao e deploy
 
-- `ci.yml` — PR/push: lint, typecheck, testes, build; `terraform fmt`/`validate`.
-- `deploy.yml` — push `main` (+ manual): `npm run ci`, garante o bucket de state, `terraform apply`.
+Veja [o guia de configuracao](docs/configuracao-fase4.md), `.env.example` e `terraform/terraform.tfvars.example`. O usuario configura credenciais e contas externas; nenhum segredo e versionado. Nao e necessario `DB_SECRET_ARN`, `pg` nem permissao de acesso PostgreSQL.
 
-**GitHub Secrets** (renovar a cada sessão do Learner Lab): `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`.
+Depois do cluster e dos tres backends, configurar os tres URLs de LoadBalancer e executar o workflow `Deploy`. O Terraform deriva a URL HTTPS do lookup do proprio Gateway quando `OS_CLIENT_LOOKUP_URL` nao e informado. O output `api_endpoint` e a URL unica do frontend e a base para os retornos/webhook do Mercado Pago. Nao ha etapa manual de copiar URL para a Lambda apos o primeiro apply.
 
-**GitHub Variables** (preenchidas após os repos anteriores subirem):
-| Variable | Origem |
-| --- | --- |
-| `DB_SECRET_ARN` | output `secret_arn` de `oficina-infra-database` |
-| `JWT_SECRET_ARN` | secret `oficina/homolog/jwt` criado manualmente no Secrets Manager |
-| `BACKEND_URL` | URL do LoadBalancer do EKS (`http://<elb-dns>`), após `oficina-api` subir |
+Os workflows CI e Deploy verificam qualidade antes de publicar as Lambdas. Proteger `main` com PR obrigatorio e checks `application` e `terraform`; `.github/settings.yml` e apenas uma declaracao, cuja aplicacao deve ser conferida no GitHub. Os testes locais nao acessam AWS, OS remoto ou Mercado Pago.
 
-## Contrato do JWT
-
-| Claim | Valor |
-| --- | --- |
-| `iss` | `oficina-auth-serverless` |
-| `aud` | `oficina-api` |
-| `sub` / `client_id` | `clientes.id` |
-| `role` | `CLIENTE` |
-| `token_use` | `client` |
-| `scopes` | `orders:read orders:write` |
-| `exp` | 5 min |
-
-## APIs
-
-Contrato OpenAPI em [`openapi.yaml`](./openapi.yaml). Swagger da aplicação em `oficina-api` (`/api/docs`).
-
-## Cleanup
-
-```bash
-terraform -chdir=terraform destroy
-```
-
-Destruir depois de `oficina-api` e antes de `oficina-infra-database`.
+Contrato OpenAPI em [openapi.yaml](openapi.yaml). Contratos de negocio permanecem no Swagger de cada microsservico. State exclusivo: `oficina/auth/terraform.tfstate`. Lambdas usam `LabRole` do Academy e executam fora da VPC, consultando OS via HTTPS.

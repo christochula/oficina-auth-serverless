@@ -6,23 +6,13 @@ export interface TokenConfig {
 }
 
 export interface RuntimeConfig extends TokenConfig {
-  dbSecretArn: string;
+  osClientLookupUrl: string;
+  authClientLookupSecretArn?: string;
+  authClientLookupToken?: string;
+  clientLookupTimeoutMs: number;
   jwtTtlSeconds: number;
   defaultRole: string;
   defaultScopes: string[];
-  pgPoolMax: number;
-  pgConnectionTimeoutMs: number;
-}
-
-export interface DatabaseSecret {
-  host: string;
-  port: number;
-  dbname: string;
-  username: string;
-  password: string;
-  sslmode: 'require' | 'verify-full' | 'disable';
-  sslCa?: string;
-  sslRejectUnauthorized: boolean;
 }
 
 export interface JwtMaterial {

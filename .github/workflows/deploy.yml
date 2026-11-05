@@ -19,19 +19,18 @@ env:
   TF_VAR_aws_region: us-east-1
   TF_VAR_environment: homolog
   TF_VAR_release_version: ${{ github.sha }}
-  # Contratos dos outros repos (GitHub Variables). Fallback para placeholder
-  # valido enquanto os repos anteriores nao subiram.
-  TF_VAR_db_secret_arn: ${{ vars.DB_SECRET_ARN || 'arn:aws:secretsmanager:us-east-1:519768589921:secret:oficina/homolog/database/connection-PLACEHOLDER' }}
-  TF_VAR_jwt_secret_arn: ${{ vars.JWT_SECRET_ARN || 'arn:aws:secretsmanager:us-east-1:519768589921:secret:oficina/homolog/jwt-PLACEHOLDER' }}
-  TF_VAR_backend_url: ${{ vars.BACKEND_URL || 'http://backend.placeholder.local' }}
+  # Required public contracts; values are configured by the user before deploy.
 
 jobs:
   deploy:
+    environment: homolog
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
@@ -41,6 +40,31 @@ jobs:
 
       - name: Install, verify and build
         run: npm ci && npm run ci
+
+      - name: Publish coverage evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: auth-coverage
+          path: coverage/
+      - name: Check required SonarCloud configuration
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+          SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+        run: |
+          test -n "$SONAR_TOKEN" || { echo "Configure GitHub Secret SONAR_TOKEN"; exit 1; }
+          test -n "$SONAR_PROJECT_KEY" || { echo "Configure GitHub Variable SONAR_PROJECT_KEY"; exit 1; }
+          test -n "$SONAR_ORGANIZATION" || { echo "Configure GitHub Variable SONAR_ORGANIZATION"; exit 1; }
+      - name: SonarCloud quality gate
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >-
+            -Dsonar.host.url=https://sonarcloud.io
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
+            -Dsonar.qualitygate.wait=true
 
       - name: Configure AWS credentials (AWS Academy session keys)
         uses: aws-actions/configure-aws-credentials@v4
@@ -70,6 +94,16 @@ jobs:
           echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
 
       - name: Terraform apply
+        env:
+          TF_VAR_datadog_site: ${{ vars.DD_SITE || 'datadoghq.com' }}
+          TF_VAR_os_client_lookup_url: ${{ vars.OS_CLIENT_LOOKUP_URL }}
+          TF_VAR_auth_client_lookup_secret_arn: ${{ vars.AUTH_CLIENT_LOOKUP_SECRET_ARN }}
+          TF_VAR_billing_backend_url: ${{ vars.BILLING_BACKEND_URL }}
+          TF_VAR_production_backend_url: ${{ vars.PRODUCTION_BACKEND_URL }}
+          TF_VAR_datadog_enabled: ${{ vars.DATADOG_ENABLED || 'false' }}
+          TF_VAR_datadog_api_key_secret_arn: ${{ vars.DATADOG_API_KEY_SECRET_ARN }}
+          TF_VAR_jwt_secret_arn: ${{ vars.JWT_SECRET_ARN }}
+          TF_VAR_backend_url: ${{ vars.BACKEND_URL }}
         run: |
           terraform -chdir=terraform init -input=false \
             -backend-config="bucket=${{ steps.backend.outputs.bucket }}" \
@@ -77,6 +111,7 @@ jobs:
             -backend-config="region=${AWS_REGION}" \
             -backend-config="encrypt=true" \
             -backend-config="use_lockfile=true"
+          terraform -chdir=terraform fmt -check -recursive
           terraform -chdir=terraform validate -no-color
           terraform -chdir=terraform apply -input=false -auto-approve
 

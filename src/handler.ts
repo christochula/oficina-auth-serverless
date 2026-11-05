@@ -7,7 +7,7 @@ import { loadRuntimeConfig } from './config';
 import type { CustomerIdentity, JwtMaterial, RuntimeConfig } from './types';
 import { correlationIdFrom } from './lib/correlation';
 import { isValidCpf, normalizeCpf } from './lib/cpf';
-import { findCustomerByCpf } from './lib/database';
+import { findCustomerByCpf } from './lib/customer-client';
 import { signAccessToken } from './lib/jwt';
 import { errorMetadata, log } from './lib/logger';
 import { emitAuthMetric } from './lib/metrics';
@@ -24,6 +24,7 @@ interface AuthDependencies {
   findCustomer: (
     cpf: string,
     config: RuntimeConfig,
+    correlationId: string,
   ) => Promise<CustomerIdentity | null>;
   jwtMaterial: (secretArn: string, cacheTtlMs: number) => Promise<JwtMaterial>;
   newJti: () => string;
@@ -69,7 +70,8 @@ function parseCpf(event: APIGatewayProxyEventV2): string | null {
 
 const defaultDependencies: AuthDependencies = {
   config: loadRuntimeConfig,
-  findCustomer: findCustomerByCpf,
+  findCustomer: (cpf, config, correlationId) =>
+    findCustomerByCpf(cpf, config, fetch, undefined, correlationId),
   jwtMaterial: getJwtMaterial,
   newJti: randomUUID,
 };
@@ -110,6 +112,7 @@ export function createAuthHandler(
       const customer = await dependencies.findCustomer(
         normalizeCpf(rawCpf),
         config,
+        correlationId,
       );
       if (!customer?.active) {
         emitAuthMetric('failure', 'invalid_credentials');

@@ -4,7 +4,9 @@ import { createAuthHandler } from '../../src/handler';
 import type { JwtMaterial, RuntimeConfig } from '../../src/types';
 
 const config: RuntimeConfig = {
-  dbSecretArn: 'arn:database',
+  osClientLookupUrl: 'https://gateway.test/api/v1/internal/auth/cliente',
+  authClientLookupSecretArn: 'arn:lookup',
+  clientLookupTimeoutMs: 5000,
   jwtSecretArn: 'arn:jwt',
   jwtTtlSeconds: 300,
   jwtIssuer: 'oficina-auth',
@@ -12,8 +14,6 @@ const config: RuntimeConfig = {
   defaultRole: 'CLIENTE',
   defaultScopes: ['orders:read', 'orders:write'],
   secretCacheTtlMs: 300_000,
-  pgPoolMax: 4,
-  pgConnectionTimeoutMs: 3_000,
 };
 const material: JwtMaterial = {
   secret: 'a-secure-access-secret-with-at-least-32-bytes',
@@ -71,7 +71,7 @@ describe('POST /auth/token with mocked integrations', () => {
 
     const result = await handler(event({ cpf: '529.982.247-25' }));
     expect(result.statusCode).toBe(200);
-    expect(findCustomer).toHaveBeenCalledWith('52998224725', config);
+    expect(findCustomer).toHaveBeenCalledWith('52998224725', config, 'integration-test');
     const body = JSON.parse(result.body ?? '{}') as { access_token: string };
     expect(jwt.verify(body.access_token, material.secret)).toMatchObject({
       sub: 'customer-id',

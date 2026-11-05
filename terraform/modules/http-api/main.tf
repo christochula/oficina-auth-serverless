@@ -159,7 +159,9 @@ resource "aws_apigatewayv2_integration" "public_backend" {
   integration_uri        = "${trimsuffix(each.value.base, "/")}${try(each.value.backend_path, each.value.path)}"
   connection_type        = "INTERNET"
   payload_format_version = "1.0"
-  timeout_milliseconds   = 10000
+  # Billing verifies the signature, reads the canonical MP payment (10s timeout)
+  # and commits its transaction before acknowledging the webhook.
+  timeout_milliseconds = each.key == "mercado_pago" ? 30000 : 10000
 }
 
 resource "aws_apigatewayv2_route" "public_backend" {

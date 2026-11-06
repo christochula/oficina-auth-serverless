@@ -45,3 +45,16 @@ Depois do cluster e dos tres backends, configurar os tres URLs de LoadBalancer e
 Os workflows CI e Deploy verificam qualidade antes de publicar as Lambdas. Proteger `main` com PR obrigatorio e checks `application` e `terraform`; `.github/settings.yml` e apenas uma declaracao, cuja aplicacao deve ser conferida no GitHub. Os testes locais nao acessam AWS, OS remoto ou Mercado Pago.
 
 Contrato OpenAPI em [openapi.yaml](openapi.yaml). Contratos de negocio permanecem no Swagger de cada microsservico. State exclusivo: `oficina/auth/terraform.tfstate`. Lambdas usam `LabRole` do Academy e executam fora da VPC, consultando OS via HTTPS.
+
+## Evidencias publicadas e homologacao
+
+Snapshot de 06/11/2026, commit `5bd146a`:
+
+- [CI aprovado](https://github.com/christochula/oficina-auth-serverless/actions/runs/42141606611), incluindo o quality gate Sonar obrigatorio.
+- [SonarCloud](https://sonarcloud.io/dashboard?id=christochula-oficina_oficina-auth-serverless): cobertura **88,7%**, linhas 89,3% e branches 87,8%; quality gate aprovado. Essas metricas Sonar sao distintas do resumo Jest local.
+- [Relatorio de cobertura](https://github.com/christochula/oficina-auth-serverless/actions/runs/42141606611/artifacts/13502070376): artifact `auth-coverage` da mesma execucao CI.
+- [Apply/deploy aprovado pelo GitHub Actions](https://github.com/christochula/oficina-auth-serverless/actions/runs/42226810439): Gateway e Lambdas publicados na homologacao.
+- [Portal e base HTTPS do Gateway](https://8phthn792m.execute-api.us-east-1.amazonaws.com); o endpoint de emissao e `POST /auth/token`, conforme [OpenAPI da autenticacao](openapi.yaml).
+- Contratos publicos verificados com HTTP200: [Swagger OS](https://8phthn792m.execute-api.us-east-1.amazonaws.com/api/docs), [OpenAPI Billing](https://8phthn792m.execute-api.us-east-1.amazonaws.com/api/v1/billing/openapi.json) e [OpenAPI Production](https://8phthn792m.execute-api.us-east-1.amazonaws.com/api/v1/production/openapi.json).
+
+A disponibilidade dos backends depende da sessao ativa do AWS Academy e da renovacao das credenciais temporarias via GitHub Actions.

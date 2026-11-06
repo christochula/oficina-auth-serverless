@@ -21,8 +21,7 @@
     "@aws-sdk/client-secrets-manager": "^3.0.0",
     "@aws-sdk/client-sns": "^3.0.0",
     "datadog-lambda-js": "^12.142.0",
-    "jsonwebtoken": "^9.0.2",
-    "pg": "^8.13.1"
+    "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
@@ -30,7 +29,6 @@
     "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.0",
     "@types/node": "^22.0.0",
-    "@types/pg": "^8.11.0",
     "esbuild": "^0.25.0",
     "eslint": "^10.0.0",
     "jest": "^30.0.0",

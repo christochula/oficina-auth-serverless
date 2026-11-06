@@ -1,15 +1,32 @@
 name: Deploy
+run-name: Auth Infrastructure ${{ inputs.operation || (startsWith(github.ref_name, 'phase4/auth-apply-') && 'apply' || 'plan') }} @${{ inputs.target_sha || github.sha }}
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      target_ref:
+        description: Branch revisada que contem o commit aprovado no CI
+        required: true
+        type: string
+      target_sha:
+        description: SHA completo de 40 caracteres, deve ser o HEAD da branch
+        required: true
+        type: string
+      operation:
+        description: Plan primeiro; apply somente apos revisao e AUTH_APPROVED_PLAN_RUN_ID
+        required: true
+        default: plan
+        type: choice
+        options: [plan, apply]
+  push:
+    tags: ["phase4/auth-plan-*", "phase4/auth-apply-*"]
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: deploy-main
+  group: auth-infrastructure-homolog
   cancel-in-progress: false
 
 env:
@@ -18,20 +35,61 @@ env:
   AWS_REGION: us-east-1
   TF_VAR_aws_region: us-east-1
   TF_VAR_environment: homolog
-  TF_VAR_release_version: ${{ github.sha }}
-  # Contratos dos outros repos (GitHub Variables). Fallback para placeholder
-  # valido enquanto os repos anteriores nao subiram.
-  TF_VAR_db_secret_arn: ${{ vars.DB_SECRET_ARN || 'arn:aws:secretsmanager:us-east-1:519768589921:secret:oficina/homolog/database/connection-PLACEHOLDER' }}
-  TF_VAR_jwt_secret_arn: ${{ vars.JWT_SECRET_ARN || 'arn:aws:secretsmanager:us-east-1:519768589921:secret:oficina/homolog/jwt-PLACEHOLDER' }}
-  TF_VAR_backend_url: ${{ vars.BACKEND_URL || 'http://backend.placeholder.local' }}
+  # Required public contracts; values are configured by the user before deploy.
 
 jobs:
   deploy:
+    environment: homolog
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      TARGET_SHA: ${{ inputs.target_sha || github.sha }}
+      TARGET_REF: ${{ inputs.target_ref || vars.DEPLOY_SOURCE_REF || 'feature/phase4-distributed' }}
+      OPERATION: ${{ inputs.operation || (startsWith(github.ref_name, 'phase4/auth-apply-') && 'apply' || 'plan') }}
+      TF_VAR_release_version: ${{ inputs.target_sha || github.sha }}
     steps:
-      - name: Checkout
+      - name: Checkout reviewed workflow controls
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+
+      - name: Verify exact tested branch and commit before AWS access
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REQUIRED_DEPLOY_GATES: application,terraform
+          CI_WORKFLOW_FILE: ci.yml
+          DISPATCH_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || '' }}
+          DISPATCH_REF: ${{ github.event_name == 'workflow_dispatch' && github.ref || '' }}
+        run: node scripts/check-deploy-gates.mjs
+
+      - name: Checkout exact tested source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 0
+
+      - name: Verify the approved plan run before any AWS access
+        if: env.OPERATION == 'apply'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          APPROVED_PLAN_RUN_ID: ${{ vars.AUTH_APPROVED_PLAN_RUN_ID }}
+          PLAN_WORKFLOW_NAME: Deploy
+          PLAN_WORKFLOW_FILE: deploy.yml
+          PLAN_TITLE_PREFIX: Auth Infrastructure
+          PLAN_TAG_PREFIX: phase4/auth-plan-
+          PLAN_ARTIFACT_PREFIX: auth-plan
+        run: node scripts/check-approved-plan.mjs
+
+      - name: Download only the reviewed redacted text plan
+        if: env.OPERATION == 'apply'
+        uses: actions/download-artifact@v4
+        with:
+          name: auth-plan-${{ env.TARGET_SHA }}-${{ vars.AUTH_APPROVED_PLAN_RUN_ID }}
+          run-id: ${{ vars.AUTH_APPROVED_PLAN_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/auth-reviewed
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
@@ -39,8 +97,25 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install, verify and build
-        run: npm ci && npm run ci
+      - name: Rebuild Lambda bundles from the exact CI-approved commit
+        run: |
+          npm ci && npm run build
+          chmod 644 .build/*.js
+          touch -t 198001010000 .build/*.js
+
+      - name: Validate required public configuration
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          JWT_SECRET_ARN: ${{ vars.JWT_SECRET_ARN }}
+          LOOKUP_SECRET_ARN: ${{ vars.AUTH_CLIENT_LOOKUP_SECRET_ARN }}
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+          BILLING_BACKEND_URL: ${{ vars.BILLING_BACKEND_URL }}
+          PRODUCTION_BACKEND_URL: ${{ vars.PRODUCTION_BACKEND_URL }}
+        run: |
+          set -euo pipefail
+          for name in TF_STATE_BUCKET JWT_SECRET_ARN LOOKUP_SECRET_ARN BACKEND_URL BILLING_BACKEND_URL PRODUCTION_BACKEND_URL; do
+            test -n "${!name}" || { echo "Configure $name before requesting an Auth plan"; exit 1; }
+          done
 
       - name: Configure AWS credentials (AWS Academy session keys)
         uses: aws-actions/configure-aws-credentials@v4
@@ -55,30 +130,58 @@ jobs:
         with:
           terraform_version: 1.16.0
 
-      - name: Ensure Terraform state bucket
-        id: backend
+      - name: Plan the existing Auth state without deletion or replacement
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          PLAN_WORKFLOW_FILE: deploy.yml
+          PLAN_OPERATION: ${{ env.OPERATION }}
+          TF_VAR_datadog_site: ${{ vars.DD_SITE || 'datadoghq.com' }}
+          TF_VAR_os_client_lookup_url: ${{ vars.OS_CLIENT_LOOKUP_URL }}
+          TF_VAR_auth_client_lookup_secret_arn: ${{ vars.AUTH_CLIENT_LOOKUP_SECRET_ARN }}
+          TF_VAR_billing_backend_url: ${{ vars.BILLING_BACKEND_URL }}
+          TF_VAR_production_backend_url: ${{ vars.PRODUCTION_BACKEND_URL }}
+          TF_VAR_datadog_enabled: ${{ vars.DATADOG_ENABLED || 'false' }}
+          TF_VAR_datadog_api_key_secret_arn: ${{ vars.DATADOG_API_KEY_SECRET_ARN }}
+          TF_VAR_jwt_secret_arn: ${{ vars.JWT_SECRET_ARN }}
+          TF_VAR_backend_url: ${{ vars.BACKEND_URL }}
         run: |
           set -euo pipefail
-          ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
-          BUCKET="oficina-tc3-tfstate-${ACCOUNT_ID}"
-          if ! aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
-            aws s3api create-bucket --bucket "$BUCKET" --region "${AWS_REGION}"
-            aws s3api put-bucket-versioning --bucket "$BUCKET" --versioning-configuration Status=Enabled
-            aws s3api put-public-access-block --bucket "$BUCKET" \
-              --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
-          fi
-          echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
-
-      - name: Terraform apply
-        run: |
           terraform -chdir=terraform init -input=false \
-            -backend-config="bucket=${{ steps.backend.outputs.bucket }}" \
+            -backend-config="bucket=$TF_STATE_BUCKET" \
             -backend-config="key=oficina/auth/terraform.tfstate" \
             -backend-config="region=${AWS_REGION}" \
             -backend-config="encrypt=true" \
             -backend-config="use_lockfile=true"
+          terraform -chdir=terraform fmt -check -recursive
           terraform -chdir=terraform validate -no-color
-          terraform -chdir=terraform apply -input=false -auto-approve
+          terraform -chdir=terraform plan -input=false -lock-timeout=5m -out="$RUNNER_TEMP/auth.tfplan"
+          terraform -chdir=terraform show -json "$RUNNER_TEMP/auth.tfplan" | jq -e 'all(.resource_changes[]?; (.change.actions | index("delete")) == null)' > /dev/null || { echo 'Resource deletion/replacement is forbidden'; exit 1; }
+          terraform -chdir=terraform show -no-color "$RUNNER_TEMP/auth.tfplan" > "$RUNNER_TEMP/auth-plan.txt"
+          terraform -chdir=terraform show -json "$RUNNER_TEMP/auth.tfplan" | node scripts/terraform-plan-fingerprint.mjs > "$RUNNER_TEMP/auth-plan-review.json"
+
+      - name: Publish only the redacted text plan for review
+        if: env.OPERATION == 'plan'
+        uses: actions/upload-artifact@v4
+        with:
+          name: auth-plan-${{ env.TARGET_SHA }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/auth-plan.txt
+            ${{ runner.temp }}/auth-plan-review.json
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Apply only an identical reviewed plan
+        if: env.OPERATION == 'apply'
+        run: |
+          set -euo pipefail
+          cmp -s "$RUNNER_TEMP/auth-plan.txt" "$RUNNER_TEMP/auth-reviewed/auth-plan.txt" || { echo 'Plan changed after review; request and review a new plan'; exit 1; }
+          node scripts/terraform-plan-fingerprint.mjs --compare "$RUNNER_TEMP/auth-reviewed/auth-plan-review.json" "$RUNNER_TEMP/auth-plan-review.json"
+          terraform -chdir=terraform apply -input=false -lock-timeout=5m "$RUNNER_TEMP/auth.tfplan"
 
       - name: Publish outputs
+        if: env.OPERATION == 'apply'
         run: terraform -chdir=terraform output
+
+      - name: Delete the ephemeral binary plan
+        if: always()
+        run: rm -f "$RUNNER_TEMP/auth.tfplan"

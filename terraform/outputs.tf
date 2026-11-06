@@ -31,8 +31,9 @@ output "jwt_secret_arn" {
   value       = var.jwt_secret_arn
 }
 
-output "database_secret_arn" {
-  value = var.db_secret_arn
+output "client_lookup_endpoint" {
+  description = "HTTPS endpoint called by auth; OS validates the internal token."
+  value       = var.os_client_lookup_url != "" ? var.os_client_lookup_url : "${module.http_api.api_endpoint}/api/v1/internal/auth/cliente"
 }
 
 output "notification_queue_url" {

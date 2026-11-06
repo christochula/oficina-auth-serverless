@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches-ignore: [main]
+    branches: ["**"]
   workflow_dispatch:
 
 permissions:
@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
@@ -33,10 +35,36 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
+      - name: Deploy gate regression tests
+        run: node --test scripts/check-deploy-gates.test.mjs scripts/check-approved-plan.test.mjs scripts/terraform-plan-fingerprint.test.mjs
       - name: Unit and mocked integration tests
         run: npm test
       - name: Build Lambda bundles
         run: npm run build
+      - name: Publish coverage evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: auth-coverage
+          path: coverage/
+      - name: Check required SonarCloud configuration
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+          SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+        run: |
+          test -n "$SONAR_TOKEN" || { echo "Configure GitHub Secret SONAR_TOKEN"; exit 1; }
+          test -n "$SONAR_PROJECT_KEY" || { echo "Configure GitHub Variable SONAR_PROJECT_KEY"; exit 1; }
+          test -n "$SONAR_ORGANIZATION" || { echo "Configure GitHub Variable SONAR_ORGANIZATION"; exit 1; }
+      - name: SonarCloud quality gate
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >-
+            -Dsonar.host.url=https://sonarcloud.io
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
+            -Dsonar.qualitygate.wait=true
 
   terraform:
     name: terraform

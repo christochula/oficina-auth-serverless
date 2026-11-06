@@ -47,22 +47,59 @@ variable "lab_role_arn" {
 }
 
 # --- Contratos com os outros repos (passados como TF_VAR no deploy) ---------
-variable "db_secret_arn" {
-  description = "ARN do secret de conexao do RDS (output secret_arn de oficina-infra-database)."
+variable "os_client_lookup_url" {
+  description = "Optional HTTPS lookup URL; empty derives this Gateway's exact internal route."
   type        = string
-  default     = "arn:aws:secretsmanager:us-east-1:000000000000:secret:oficina/homolog/database/connection-PLACEHOLDER"
+  default     = ""
+  validation {
+    condition     = var.os_client_lookup_url == "" || can(regex("^https://", var.os_client_lookup_url))
+    error_message = "os_client_lookup_url must use HTTPS."
+  }
+}
+
+variable "auth_client_lookup_secret_arn" {
+  description = "Secrets Manager ARN, JSON token (at least 32 bytes), shared only with OS."
+  type        = string
+  validation {
+    condition     = can(regex("^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:", var.auth_client_lookup_secret_arn))
+    error_message = "auth_client_lookup_secret_arn must be an AWS Secrets Manager ARN."
+  }
+}
+
+variable "billing_backend_url" {
+  description = "Billing public LoadBalancer base URL."
+  type        = string
+  validation {
+    condition     = can(regex("^https?://[^/?#@]+/?$", var.billing_backend_url))
+    error_message = "billing_backend_url must be an HTTP(S) base URL without credentials, path or query."
+  }
+}
+
+variable "production_backend_url" {
+  description = "Production public LoadBalancer base URL."
+  type        = string
+  validation {
+    condition     = can(regex("^https?://[^/?#@]+/?$", var.production_backend_url))
+    error_message = "production_backend_url must be an HTTP(S) base URL without credentials, path or query."
+  }
 }
 
 variable "jwt_secret_arn" {
   description = "ARN do secret JWT compartilhado (JSON com secret e refreshSecret)."
   type        = string
-  default     = "arn:aws:secretsmanager:us-east-1:000000000000:secret:oficina/homolog/jwt-PLACEHOLDER"
+  validation {
+    condition     = can(regex("^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:", var.jwt_secret_arn))
+    error_message = "jwt_secret_arn must be an AWS Secrets Manager ARN."
+  }
 }
 
 variable "backend_url" {
   description = "URL publica do LoadBalancer do EKS (oficina-api). Placeholder ate o repo de app subir."
   type        = string
-  default     = "http://backend.placeholder.local"
+  validation {
+    condition     = can(regex("^https?://[^/?#@]+/?$", var.backend_url))
+    error_message = "backend_url must be an HTTP(S) base URL without credentials, path or query."
+  }
 }
 
 variable "jwt_issuer" {

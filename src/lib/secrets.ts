@@ -3,7 +3,7 @@ import {
   SecretsManagerClient,
   type SecretsManagerClientConfig,
 } from '@aws-sdk/client-secrets-manager';
-import type { DatabaseSecret, JwtMaterial } from '../types';
+import type { JwtMaterial } from '../types';
 
 interface CacheEntry {
   expiresAt: number;
@@ -65,41 +65,20 @@ export async function getSecretJson(
   return value;
 }
 
-export async function getDatabaseSecret(
+export async function getClientLookupToken(
   secretArn: string,
   cacheTtlMs: number,
   secretsClient?: SecretsManagerClient,
-): Promise<DatabaseSecret> {
+): Promise<string> {
   const value = asObject(
     await getSecretJson(secretArn, cacheTtlMs, secretsClient),
-    'database',
+    'auth-client-lookup',
   );
-  const port = value.port;
-  const sslMode = value.sslmode ?? 'verify-full';
-  if (typeof port !== 'number' || !Number.isInteger(port) || port <= 0) {
-    throw new Error('Secret database has an invalid port');
+  const token = requiredString(value, 'token', 'auth-client-lookup');
+  if (Buffer.byteLength(token, 'utf8') < 32) {
+    throw new Error('Secret auth-client-lookup token must have at least 32 bytes');
   }
-  if (
-    sslMode !== 'require' &&
-    sslMode !== 'verify-full' &&
-    sslMode !== 'disable'
-  ) {
-    throw new Error('Secret database has an invalid sslmode');
-  }
-
-  return {
-    host: requiredString(value, 'host', 'database'),
-    port,
-    dbname: requiredString(value, 'dbname', 'database'),
-    username: requiredString(value, 'username', 'database'),
-    password: requiredString(value, 'password', 'database'),
-    sslmode: sslMode,
-    ...(typeof value.ssl_ca === 'string' ? { sslCa: value.ssl_ca } : {}),
-    sslRejectUnauthorized:
-      typeof value.ssl_reject_unauthorized === 'boolean'
-        ? value.ssl_reject_unauthorized
-        : true,
-  };
+  return token;
 }
 
 export async function getJwtMaterial(

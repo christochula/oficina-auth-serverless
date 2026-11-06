@@ -1,4 +1,4 @@
-# AWS Academy: Lambdas usam a LabRole; sem VPC (RDS publico com TLS forcado);
+# AWS Academy: Lambdas use LabRole, outside VPC; customer lookup is HTTPS.
 # sem policies por funcao (LabRole ja cobre Secrets Manager, SQS, SNS, X-Ray).
 
 module "auth_function" {
@@ -17,19 +17,18 @@ module "auth_function" {
   datadog_enabled = var.datadog_enabled
 
   environment_variables = merge(local.datadog_environment, {
-    DD_SERVICE               = "oficina-auth-token"
-    DB_SECRET_ARN            = var.db_secret_arn
-    JWT_SECRET_ARN           = var.jwt_secret_arn
-    JWT_ISSUER               = var.jwt_issuer
-    JWT_AUDIENCE             = var.jwt_audience
-    JWT_TTL_SECONDS          = tostring(var.jwt_ttl_seconds)
-    JWT_DEFAULT_ROLE         = "CLIENTE"
-    JWT_DEFAULT_SCOPES       = join(",", var.jwt_default_scopes)
-    SECRET_CACHE_TTL_MS      = "300000"
-    PG_POOL_MAX              = "2"
-    PG_CONNECTION_TIMEOUT_MS = "5000"
-    NODE_EXTRA_CA_CERTS      = "/var/runtime/ca-cert.pem"
-    LOG_LEVEL                = "info"
+    DD_SERVICE                    = "oficina-auth-token"
+    OS_CLIENT_LOOKUP_URL          = var.os_client_lookup_url != "" ? var.os_client_lookup_url : "${module.http_api.api_endpoint}/api/v1/internal/auth/cliente"
+    AUTH_CLIENT_LOOKUP_SECRET_ARN = var.auth_client_lookup_secret_arn
+    CLIENT_LOOKUP_TIMEOUT_MS      = "5000"
+    JWT_SECRET_ARN                = var.jwt_secret_arn
+    JWT_ISSUER                    = var.jwt_issuer
+    JWT_AUDIENCE                  = var.jwt_audience
+    JWT_TTL_SECONDS               = tostring(var.jwt_ttl_seconds)
+    JWT_DEFAULT_ROLE              = "CLIENTE"
+    JWT_DEFAULT_SCOPES            = join(",", var.jwt_default_scopes)
+    SECRET_CACHE_TTL_MS           = "300000"
+    LOG_LEVEL                     = "info"
   })
 
   tags = local.tags
@@ -71,8 +70,10 @@ module "http_api" {
   authorizer_function_arn        = module.authorizer_function.function_arn
   authorizer_function_invoke_arn = module.authorizer_function.invoke_arn
 
-  backend_url          = var.backend_url
-  cors_allowed_origins = var.cors_allowed_origins
+  backend_url            = var.backend_url
+  billing_backend_url    = var.billing_backend_url
+  production_backend_url = var.production_backend_url
+  cors_allowed_origins   = var.cors_allowed_origins
 
   authorizer_cache_ttl_seconds = 0
   tags                         = local.tags

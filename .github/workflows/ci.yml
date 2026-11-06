@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches-ignore: [main]
+    branches: ["**"]
   workflow_dispatch:
 
 permissions:
@@ -35,6 +35,8 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
+      - name: Deploy gate regression tests
+        run: node --test scripts/check-deploy-gates.test.mjs scripts/check-approved-plan.test.mjs scripts/terraform-plan-fingerprint.test.mjs
       - name: Unit and mocked integration tests
         run: npm test
       - name: Build Lambda bundles

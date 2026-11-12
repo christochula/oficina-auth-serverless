@@ -1,4 +1,5 @@
-bucket       = "oficina-tc3-tfstate-519768589921"
+# Backend novo: nao copie nem migre o state da conta anterior.
+bucket       = "REPLACE_WITH_STATE_BUCKET_IN_EXPECTED_ACCOUNT"
 key          = "oficina/auth/terraform.tfstate"
 region       = "us-east-1"
 encrypt      = true

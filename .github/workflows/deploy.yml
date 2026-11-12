@@ -124,6 +124,14 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
+      - name: Verify expected AWS account before resource access
+        env:
+          EXPECTED_AWS_ACCOUNT_ID: ${{ vars.EXPECTED_AWS_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          [[ "${EXPECTED_AWS_ACCOUNT_ID:-}" =~ ^[0-9]{12}$ ]] || { echo 'Configure EXPECTED_AWS_ACCOUNT_ID before AWS resource access.' >&2; exit 1; }
+          actual_account="$(aws sts get-caller-identity --query Account --output text)"
+          [[ "$actual_account" == "$EXPECTED_AWS_ACCOUNT_ID" ]] || { echo 'AWS credentials belong to a different account.' >&2; exit 1; }
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
@@ -136,6 +144,7 @@ jobs:
           PLAN_WORKFLOW_FILE: deploy.yml
           PLAN_OPERATION: ${{ env.OPERATION }}
           TF_VAR_datadog_site: ${{ vars.DD_SITE || 'datadoghq.com' }}
+          TF_VAR_lab_role_arn: ${{ vars.LAB_ROLE_ARN }}
           TF_VAR_os_client_lookup_url: ${{ vars.OS_CLIENT_LOOKUP_URL }}
           TF_VAR_auth_client_lookup_secret_arn: ${{ vars.AUTH_CLIENT_LOOKUP_SECRET_ARN }}
           TF_VAR_billing_backend_url: ${{ vars.BILLING_BACKEND_URL }}

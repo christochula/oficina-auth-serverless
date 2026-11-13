@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Oficina Auth Serverless API
-  version: 1.0.0
+  version: 2.0.0
   description: >-
     Contract for CPF authentication and the protected proxy exposed by the AWS
     API Gateway HTTP API. The backend API operations are documented by oficina-api.
@@ -63,7 +63,7 @@ paths:
         schema:
           type: string
     x-amazon-apigateway-any-method:
-      summary: Protected private proxy to oficina-api
+      summary: Protected proxy to the OS service
       description: >-
         Requires a client JWT accepted by the Lambda authorizer. The specific
         backend resources are defined in the oficina-api OpenAPI contract.
@@ -76,6 +76,60 @@ paths:
           description: Missing or invalid bearer token
         '403':
           description: Token accepted but insufficient authorization
+  /api/v1/billing/{proxy}:
+    parameters:
+      - name: proxy
+        in: path
+        required: true
+        schema:
+          type: string
+    x-amazon-apigateway-any-method:
+      summary: Protected Billing service proxy
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: See the Billing service OpenAPI for operation-specific responses
+  /api/v1/production/{proxy}:
+    parameters:
+      - name: proxy
+        in: path
+        required: true
+        schema:
+          type: string
+    x-amazon-apigateway-any-method:
+      summary: Protected Production service proxy
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: See the Production service OpenAPI for operation-specific responses
+  /api/v1/internal/auth/cliente:
+    post:
+      summary: OS identity lookup used only by the token Lambda
+      description: Requires a separate internal credential; no user JWT. CPF is sent in the body and is never logged.
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '200':
+          description: Active identity containing id, nome, email and ativo, optionally in a data envelope
+        '401':
+          description: Generic denial for invalid internal credential, missing or inactive customer
+  /api/v1/billing/webhooks/mercadopago:
+    post:
+      summary: Public Mercado Pago callback to Billing
+      description: Bypasses user JWT; Billing validates the provider signature and retrieves canonical payment before recording it.
+      responses:
+        '200':
+          description: Notification received; business processing remains idempotent
+        '401':
+          description: Invalid provider signature
 components:
   parameters:
     CorrelationId:
@@ -91,6 +145,10 @@ components:
       schema:
         type: string
   securitySchemes:
+    internalToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
     bearerAuth:
       type: http
       scheme: bearer

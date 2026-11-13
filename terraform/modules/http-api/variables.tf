@@ -52,3 +52,11 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "billing_backend_url" {
+  type = string
+}
+
+variable "production_backend_url" {
+  type = string
+}

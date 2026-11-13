@@ -1,16 +1,12 @@
-# Copie para terraform.tfvars (nao versionado) se rodar local.
-# No CI os valores vem de TF_VAR_* (GitHub Variables).
-
+# Copy to terraform.tfvars (ignored); never put secret values in this file.
 aws_region  = "us-east-1"
 environment = "homolog"
-
-# AWS Academy: deixe vazio para derivar de account_id
-# lab_role_arn = "arn:aws:iam::519768589921:role/LabRole"
-
-# Contratos dos outros repos (preencher no deploy real)
-db_secret_arn  = "arn:aws:secretsmanager:us-east-1:519768589921:secret:oficina/homolog/database/connection-XXXXXX"
-jwt_secret_arn = "arn:aws:secretsmanager:us-east-1:519768589921:secret:oficina/homolog/jwt-XXXXXX"
-backend_url    = "http://<elb-dns-do-eks>"
-
+backend_url            = "http://REPLACE-os-loadbalancer"
+billing_backend_url    = "http://REPLACE-billing-loadbalancer"
+production_backend_url = "http://REPLACE-production-loadbalancer"
+os_client_lookup_url          = "" # derive the HTTPS Gateway URL automatically
+auth_client_lookup_secret_arn = "arn:aws:secretsmanager:us-east-1:REPLACE:secret:oficina/homolog/auth-client-lookup-REPLACE"
+jwt_secret_arn = "arn:aws:secretsmanager:us-east-1:REPLACE:secret:oficina/homolog/jwt-REPLACE"
 notification_enabled = true
 datadog_enabled      = false
+# datadog_api_key_secret_arn = "arn:aws:secretsmanager:us-east-1:REPLACE:secret:datadog/api-key-REPLACE"
